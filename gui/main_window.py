@@ -661,13 +661,13 @@ class ZeypherMainWindow(QMainWindow):
             QMessageBox.warning(self, "Face Error", str(e))
 
     def _load_source_face(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Load Face", "", "Images (*.png *.jpg *.jpeg)")
+        path, _ = QFileDialog.getOpenFileName(self, "Load Face", "", "Images (*.png *.jpg *.jpeg *.webp)")
         if path:
             try:
-                if self.face_engine.set_source_face(path):
-                    self.statusBar().showMessage(f"Loaded: {os.path.basename(path)}")
+                if self.local_face.set_source_face(path):
+                    self.statusBar().showMessage(f"Face loaded: {os.path.basename(path)}")
                 else:
-                    QMessageBox.warning(self, "Face", "No face detected in image.")
+                    QMessageBox.warning(self, "Face", "Could not load face.\n\nTips:\n- Use a clear, front-facing photo\n- Make sure the face is well-lit\n- Try a different image")
             except Exception as e:
                 QMessageBox.warning(self, "Face Error", str(e))
 

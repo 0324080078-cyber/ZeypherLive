@@ -86,23 +86,44 @@ class LocalFaceSwap:
         try:
             img = cv2.imread(image_path)
             if img is None:
+                print(f"[LocalSwap] Could not read: {image_path}")
                 return False
+            h, w = img.shape[:2]
+            if h < 50 or w < 50:
+                print(f"[LocalSwap] Image too small: {w}x{h}")
+                return False
+
             faces = self._detect(img)
             if len(faces) > 0:
                 best = max(faces, key=lambda f: f.confidence)
                 x1, y1, x2, y2 = best.bbox
-                margin = int(0.2 * max(x2 - x1, y2 - y1))
-                h, w = img.shape[:2]
-                sx1 = max(0, x1 - margin)
-                sy1 = max(0, y1 - margin)
-                sx2 = min(w, x2 + margin)
-                sy2 = min(h, y2 + margin)
+                margin = int(0.25 * max(x2 - x1, y2 - y1))
+                sx1, sy1 = max(0, x1 - margin), max(0, y1 - margin)
+                sx2, sy2 = min(w, x2 + margin), min(h, y2 + margin)
                 self._source_face = img[sy1:sy2, sx1:sx2].copy()
                 self._source_bbox = (sx1, sy1, sx2, sy2)
                 print(f"[LocalSwap] Source face set: {self._source_face.shape}")
                 return True
-            print("[LocalSwap] No face in source image")
-            return False
+
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+            rects = cascade.detectMultiScale(gray, 1.05, 3, minSize=(30, 30))
+            if len(rects) > 0:
+                x, y, fw, fh = max(rects, key=lambda r: r[2]*r[3])
+                margin = int(0.25 * max(fw, fh))
+                sx1, sy1 = max(0, x - margin), max(0, y - margin)
+                sx2, sy2 = min(w, x + fw + margin), min(h, y + fh + margin)
+                self._source_face = img[sy1:sy2, sx1:sx2].copy()
+                self._source_bbox = (sx1, sy1, sx2, sy2)
+                print(f"[LocalSwap] Source face set (haar): {self._source_face.shape}")
+                return True
+
+            cx, cy = w // 2, h // 2
+            side = min(w, h) // 3
+            self._source_face = img[cy-side:cy+side, cx-side:cx+side].copy()
+            self._source_bbox = (cx-side, cy-side, cx+side, cy+side)
+            print(f"[LocalSwap] Using center crop: {self._source_face.shape}")
+            return True
         except Exception as e:
             print(f"[LocalSwap] Set source error: {e}")
             return False
