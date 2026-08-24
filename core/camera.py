@@ -22,6 +22,8 @@ class CameraCapture:
         self._last_time = time.time()
         self._device_name = ""
         self._opened_backend = ""
+        self._is_ip_stream = False
+        self._ip_url = ""
 
     def register_callback(self, callback: Callable):
         self._callbacks.append(callback)
@@ -60,6 +62,47 @@ class CameraCapture:
                 print(f"[Camera] Backend {name} failed: {e}")
         print(f"[Camera] FAILED to open device {device_id}")
         return False
+
+    def open_url(self, url: str) -> bool:
+        self.stop()
+        self._is_ip_stream = True
+        self._ip_url = url
+        try:
+            cap = cv2.VideoCapture(url)
+            if cap.isOpened():
+                ret, test = cap.read()
+                if ret and test is not None:
+                    self.cap = cap
+                    self._device_name = url
+                    self._opened_backend = "IP"
+                    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    print(f"[Camera] IP stream opened: {w}x{h} from {url[:50]}")
+                    return True
+                cap.release()
+            print(f"[Camera] IP stream failed: {url[:50]}")
+            return False
+        except Exception as e:
+            print(f"[Camera] IP stream error: {e}")
+            return False
+
+    def list_ip_sources(self) -> list[dict]:
+        sources = []
+        for port in [8080, 8888, 4747, 11111, 5000]:
+            url = f"http://127.0.0.1:{port}/video"
+            try:
+                cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+                cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 1000)
+                if cap.isOpened():
+                    ret, test = cap.read()
+                    if ret:
+                        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                        sources.append({"url": url, "width": w, "height": h, "source": f"Local IP Cam :{port}"})
+                    cap.release()
+            except Exception:
+                pass
+        return sources
 
     def start(self):
         if self.running:

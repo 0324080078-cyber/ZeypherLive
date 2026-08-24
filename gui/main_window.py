@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QComboBox, QSlider, QCheckBox, QTabWidget,
     QGroupBox, QGridLayout, QFileDialog, QStatusBar, QSpinBox,
-    QLineEdit, QMessageBox
+    QLineEdit, QMessageBox, QDialog, QDesktopWidget
 )
 from PyQt5.QtCore import Qt, QTimer, pyqtSignal, QObject
 from PyQt5.QtGui import QImage, QPixmap, QFont
@@ -47,6 +47,54 @@ except Exception as e:
 
 class WorkerSignals(QObject):
     stats_updated = pyqtSignal(dict)
+
+
+class FullscreenPreview(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("ZeypherLive — AI Output Fullscreen")
+        self.setStyleSheet("background-color: #000000;")
+        self.label = QLabel("AI Output", self)
+        self.label.setAlignment(Qt.AlignCenter)
+        self.label.setStyleSheet("color: #555; font-size: 16px;")
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.label)
+        self._is_fullscreen = False
+
+    def toggle(self, pixmap=None):
+        if self._is_fullscreen:
+            self._is_fullscreen = False
+            self.showNormal()
+            self.hide()
+        else:
+            self._is_fullscreen = True
+            screen = QDesktopWidget().screenGeometry()
+            self.setGeometry(0, 0, screen.width(), screen.height())
+            self.showFullScreen()
+            if pixmap:
+                scaled = pixmap.scaled(self.label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.label.setPixmap(scaled)
+
+    def update_frame(self, frame):
+        if not self._is_fullscreen:
+            return
+        try:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            h, w, ch = rgb.shape
+            qimg = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
+            pixmap = QPixmap.fromImage(qimg)
+            if not pixmap.isNull():
+                scaled = pixmap.scaled(self.label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self.label.setPixmap(scaled)
+        except Exception:
+            pass
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self._is_fullscreen = False
+            self.showNormal()
+            self.hide()
 
 
 DARK_STYLE = """
@@ -104,6 +152,7 @@ class ZeypherMainWindow(QMainWindow):
         self.lucy_engine = None
         self.fal_engine = None
         self.rvc_engine = RVCVoiceEngine()
+        self.fullscreen = FullscreenPreview(self)
 
         try:
             self.body_tracker = BodyTracker()
@@ -205,10 +254,12 @@ class ZeypherMainWindow(QMainWindow):
         ai_label.setStyleSheet("color: #aaa; font-size: 11px; font-weight: bold; letter-spacing: 2px;")
         ai_label.setAlignment(Qt.AlignCenter)
         ai_box.addWidget(ai_label)
-        self.preview_ai = QLabel("No AI output")
+        self.preview_ai = QLabel("No AI output — Click to zoom fullscreen")
         self.preview_ai.setMinimumSize(480, 360)
         self.preview_ai.setAlignment(Qt.AlignCenter)
         self.preview_ai.setStyleSheet("background-color: #0a0a0a; border: 2px solid #2a2a2a; border-radius: 8px; font-size: 14px; color: #555;")
+        self.preview_ai.setCursor(Qt.PointingHandCursor)
+        self.preview_ai.mousePressEvent = lambda e: self._toggle_fullscreen()
         ai_box.addWidget(self.preview_ai, stretch=1)
         self.lbl_ai_fps = QLabel("")
         self.lbl_ai_fps.setStyleSheet("color: #888; font-size: 11px;")
@@ -552,6 +603,29 @@ class ZeypherMainWindow(QMainWindow):
         self.stream_status.setStyleSheet("color: #888; font-size: 11px;")
         g2.addWidget(self.stream_status)
         layout.addWidget(grp2)
+
+        grp3 = QGroupBox("IP Webcam (use phone as webcam over WiFi)")
+        g3 = QVBoxLayout(grp3)
+        ip_row = QHBoxLayout()
+        ip_row.addWidget(QLabel("URL:"))
+        self.ip_url = QLineEdit("http://127.0.0.1:8080/video")
+        self.ip_url.setPlaceholderText("http://phone-ip:8080/video")
+        ip_row.addWidget(self.ip_url, stretch=1)
+        g3.addLayout(ip_row)
+        ip_row2 = QHBoxLayout()
+        self.btn_ip_scan = QPushButton("Scan Local Network")
+        self.btn_ip_scan.clicked.connect(self._scan_ip_cams)
+        ip_row2.addWidget(self.btn_ip_scan)
+        self.btn_ip_connect = QPushButton("Connect IP Cam")
+        self.btn_ip_connect.setObjectName("startBtn")
+        self.btn_ip_connect.clicked.connect(self._toggle_ip_cam)
+        ip_row2.addWidget(self.btn_ip_connect)
+        g3.addLayout(ip_row2)
+        self.ip_status = QLabel("Install IP Webcam (Android) or DroidCam")
+        self.ip_status.setStyleSheet("color: #888; font-size: 11px;")
+        g3.addWidget(self.ip_status)
+        g3.addWidget(QLabel("Recommended apps: IP Webcam (free), DroidCam, Iriun Webcam", Qt.AlignLeft))
+        layout.addWidget(grp3)
         layout.addStretch()
         return w
 
@@ -722,6 +796,9 @@ class ZeypherMainWindow(QMainWindow):
         except Exception as e:
             self.lbl_ai_fps.setText(f"Error: {e}")
 
+    def _toggle_fullscreen(self):
+        self.fullscreen.toggle()
+
     def _display_frame(self, frame, label):
         try:
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -733,6 +810,8 @@ class ZeypherMainWindow(QMainWindow):
             if not pixmap.isNull():
                 scaled = pixmap.scaled(label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 label.setPixmap(scaled)
+                if label == self.preview_ai:
+                    self.fullscreen.update_frame(frame)
         except Exception as e:
             label.setText(f"Display error: {e}")
 
@@ -1022,6 +1101,62 @@ class ZeypherMainWindow(QMainWindow):
                 self.rvc_engine_status.setText("Load failed — install torch")
                 self.rvc_engine_status.setStyleSheet("color: #ff5555; font-size: 11px;")
 
+    def _scan_ip_cams(self):
+        self.ip_status.setText("Scanning local network for cameras...")
+        self.ip_status.setStyleSheet("color: #ffaa00; font-size: 11px;")
+        def _do_scan():
+            sources = self.camera.list_ip_sources()
+            if sources:
+                msg = "Found: " + ", ".join(f"{s['source']} ({s['width']}x{s['height']})" for s in sources)
+                QTimer.singleShot(0, lambda: self.ip_status.setText(msg))
+                QTimer.singleShot(0, lambda: self.ip_status.setStyleSheet("color: #55ff55; font-size: 11px;"))
+                if sources:
+                    QTimer.singleShot(0, lambda: self.ip_url.setText(sources[0]["url"]))
+            else:
+                QTimer.singleShot(0, lambda: self.ip_status.setText("No cameras found. Make sure phone app is running."))
+                QTimer.singleShot(0, lambda: self.ip_status.setStyleSheet("color: #ffaa00; font-size: 11px;"))
+        import threading
+        threading.Thread(target=_do_scan, daemon=True).start()
+
+    def _toggle_ip_cam(self):
+        if self.camera.running:
+            self.camera.stop()
+            self.btn_start.setText("Start Camera")
+            self.btn_start.setObjectName("startBtn")
+            self.btn_start.style().polish(self.btn_start)
+            self.ip_status.setText("Disconnected")
+            self.ip_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+            return
+        url = self.ip_url.text().strip()
+        if not url:
+            self.ip_status.setText("Enter a URL first")
+            self.ip_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+            return
+        self.ip_status.setText("Connecting...")
+        self.ip_status.setStyleSheet("color: #ffaa00; font-size: 11px;")
+        if self.camera.open_url(url):
+            self.camera.start()
+            time.sleep(0.5)
+            frame = self.camera.read()
+            if frame is not None:
+                self.btn_ip_connect.setText("Disconnect IP Cam")
+                self.btn_ip_connect.setObjectName("stopBtn")
+                self.btn_ip_connect.style().polish(self.btn_ip_connect)
+                self.btn_start.setText("Stop Camera")
+                self.btn_start.setObjectName("stopBtn")
+                self.btn_start.style().polish(self.btn_start)
+                w = frame.shape[1]
+                h = frame.shape[0]
+                self.ip_status.setText(f"Connected — {w}x{h}")
+                self.ip_status.setStyleSheet("color: #55ff55; font-size: 11px;")
+            else:
+                self.camera.stop()
+                self.ip_status.setText("Connected but can't read frames")
+                self.ip_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+        else:
+            self.ip_status.setText("Failed to connect — check URL and phone app")
+            self.ip_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+
     def _update_stats(self):
         pass
 
@@ -1045,6 +1180,8 @@ class ZeypherMainWindow(QMainWindow):
                 self.fal_engine.disconnect()
             if self.rvc_engine.running:
                 self.rvc_engine.stop()
+            if self.fullscreen._is_fullscreen:
+                self.fullscreen.close()
             CONFIG.save()
         except Exception:
             pass
