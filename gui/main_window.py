@@ -440,34 +440,9 @@ class ZeypherMainWindow(QMainWindow):
         layout = QVBoxLayout(w)
         layout.setSpacing(6)
 
-        grp1 = QGroupBox("Basic Voice Effects")
-        g1 = QVBoxLayout(grp1)
-        self.voice_enabled = QCheckBox("Enable Basic Voice Changer")
-        self.voice_enabled.stateChanged.connect(self._toggle_voice)
-        g1.addWidget(self.voice_enabled)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Effect:"))
-        self.voice_effect = QComboBox()
-        self.voice_effect.addItems(["none", "female", "male", "robot", "deep", "high", "alien", "demon", "chipmunk", "echo", "reverb", "telephone", "megaphone"])
-        self.voice_effect.currentTextChanged.connect(lambda v: self.voice_changer.set_effect(v))
-        row.addWidget(self.voice_effect)
-        g1.addLayout(row)
-        row2 = QHBoxLayout()
-        row2.addWidget(QLabel("Pitch:"))
-        self.voice_pitch = QSlider(Qt.Horizontal)
-        self.voice_pitch.setRange(-2400, 2400)
-        self.voice_pitch.valueChanged.connect(lambda v: self.voice_changer.set_pitch(v / 100.0))
-        row2.addWidget(self.voice_pitch)
-        self.pitch_lbl = QLabel("0.0")
-        self.pitch_lbl.setFixedWidth(40)
-        self.voice_pitch.valueChanged.connect(lambda v: self.pitch_lbl.setText(f"{v/100:.1f}"))
-        row2.addWidget(self.pitch_lbl)
-        g1.addLayout(row2)
-        layout.addWidget(grp1)
-
-        grp2 = QGroupBox("Real-time Voice Changer (RVC, routes to any app)")
+        grp2 = QGroupBox("Real-time Voice Changer (speak here, hear changed voice)")
         g2 = QVBoxLayout(grp2)
-        self.rvc_enabled = QCheckBox("Enable Real-time Voice Changer")
+        self.rvc_enabled = QCheckBox("Enable Voice Changer")
         self.rvc_enabled.stateChanged.connect(self._toggle_rvc)
         g2.addWidget(self.rvc_enabled)
         rvc_row = QHBoxLayout()
@@ -476,10 +451,16 @@ class ZeypherMainWindow(QMainWindow):
         self.rvc_input.setMinimumWidth(200)
         rvc_row.addWidget(self.rvc_input, stretch=1)
         g2.addLayout(rvc_row)
+        rvc_row_out = QHBoxLayout()
+        rvc_row_out.addWidget(QLabel("Output:"))
+        self.rvc_output = QComboBox()
+        self.rvc_output.setMinimumWidth(200)
+        rvc_row_out.addWidget(self.rvc_output, stretch=1)
+        g2.addLayout(rvc_row_out)
         rvc_row2 = QHBoxLayout()
         rvc_row2.addWidget(QLabel("Pitch:"))
         self.rvc_pitch = QSlider(Qt.Horizontal)
-        self.rvc_pitch.setRange(-2400, 2400)
+        self.rvc_pitch.setRange(-1200, 1200)
         self.rvc_pitch.setValue(400)
         self.rvc_pitch.valueChanged.connect(lambda v: setattr(self.realtime_vc, '_pitch_shift', v / 100.0))
         rvc_row2.addWidget(self.rvc_pitch)
@@ -500,11 +481,18 @@ class ZeypherMainWindow(QMainWindow):
         self.rvc_formant.valueChanged.connect(lambda v: self.rvc_formant_lbl.setText(f"{v/100:.1f}"))
         rvc_row3.addWidget(self.rvc_formant_lbl)
         g2.addLayout(rvc_row3)
-        self.btn_rvc = QPushButton("Start Real-time Voice Changer")
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Quick Preset:"))
+        self.voice_preset = QComboBox()
+        self.voice_preset.addItems(["Custom", "Female (+4.0 pitch)", "Male (-3.0 pitch)", "Deep (-5.0)", "High (+6.0)", "Chipmunk (+12)", "Demon (-8)"])
+        self.voice_preset.currentTextChanged.connect(self._apply_voice_preset)
+        preset_row.addWidget(self.voice_preset, stretch=1)
+        g2.addLayout(preset_row)
+        self.btn_rvc = QPushButton("Start Voice Changer")
         self.btn_rvc.setObjectName("startBtn")
         self.btn_rvc.clicked.connect(self._toggle_rvc_start)
         g2.addWidget(self.btn_rvc)
-        self.rvc_status = QLabel("Select input device and start")
+        self.rvc_status = QLabel("Select mic + speakers, then start")
         self.rvc_status.setStyleSheet("color: #888; font-size: 11px;")
         g2.addWidget(self.rvc_status)
         layout.addWidget(grp2)
@@ -885,34 +873,57 @@ class ZeypherMainWindow(QMainWindow):
         if state == Qt.Checked:
             devices = self.realtime_vc.list_devices()
             self.rvc_input.clear()
+            self.rvc_output.clear()
             for d in devices:
                 self.rvc_input.addItem(f"{d['name']} ({d['rate']}Hz)", d['id'])
+            out_devices = self.realtime_vc.list_output_devices()
+            for d in out_devices:
+                self.rvc_output.addItem(f"{d['name']} ({d['rate']}Hz)", d['id'])
         else:
             self.rvc_input.clear()
+            self.rvc_output.clear()
+
+    def _apply_voice_preset(self, preset):
+        presets = {
+            "Custom": (400, 30),
+            "Female (+4.0 pitch)": (400, 30),
+            "Male (-3.0 pitch)": (-300, -20),
+            "Deep (-5.0)": (-500, -30),
+            "High (+6.0)": (600, 40),
+            "Chipmunk (+12)": (1200, 50),
+            "Demon (-8)": (-800, -40),
+        }
+        if preset in presets:
+            pitch, formant = presets[preset]
+            self.rvc_pitch.setValue(pitch)
+            self.rvc_formant.setValue(formant)
 
     def _toggle_rvc_start(self):
         if self.realtime_vc.running:
             self.realtime_vc.stop()
-            self.btn_rvc.setText("Start Real-time Voice Changer")
+            self.btn_rvc.setText("Start Voice Changer")
             self.btn_rvc.setObjectName("startBtn")
             self.btn_rvc.style().polish(self.btn_rvc)
             self.rvc_status.setText("Stopped")
             self.rvc_status.setStyleSheet("color: #ff5555; font-size: 11px;")
         else:
             dev_id = self.rvc_input.currentData()
+            out_id = self.rvc_output.currentData()
             if dev_id is None:
-                self.rvc_status.setText("Select an input device first")
+                self.rvc_status.setText("Select an input mic first")
                 self.rvc_status.setStyleSheet("color: #ff5555; font-size: 11px;")
                 return
-            self.realtime_vc.set_devices(input_id=dev_id)
+            self.realtime_vc.set_devices(input_id=dev_id, output_id=out_id)
+            self.realtime_vc._pitch_shift = self.rvc_pitch.value() / 100.0
+            self.realtime_vc._formant_shift = self.rvc_formant.value() / 100.0
             if self.realtime_vc.start():
-                self.btn_rvc.setText("Stop Real-time Voice Changer")
+                self.btn_rvc.setText("Stop Voice Changer")
                 self.btn_rvc.setObjectName("stopBtn")
                 self.btn_rvc.style().polish(self.btn_rvc)
-                self.rvc_status.setText("Running — route app mic to this output")
+                self.rvc_status.setText("Running — speak and hear your changed voice!")
                 self.rvc_status.setStyleSheet("color: #55ff55; font-size: 11px;")
             else:
-                self.rvc_status.setText("Failed to start — check device")
+                self.rvc_status.setText("Failed to start — check devices")
                 self.rvc_status.setStyleSheet("color: #ff5555; font-size: 11px;")
 
     def _toggle_lip_sync(self, state):
