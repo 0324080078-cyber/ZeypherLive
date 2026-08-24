@@ -18,8 +18,8 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 SECRET_KEY = os.environ.get("ZEYPHER_SECRET", "zeypher-live-secret-key-change-in-production")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 72
-FREE_CREDITS = 1000
-CREDIT_COST_PER_SECOND = 1
+FREE_CREDITS = 0
+CREDITS_PER_SECOND = 2
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
@@ -92,14 +92,14 @@ def register(req: RegisterReq):
         "id": user_id,
         "email": req.email,
         "password": pwd_ctx.hash(req.password),
-        "credits": FREE_CREDITS,
+        "credits": 0,
         "created": datetime.utcnow().isoformat(),
         "total_used": 0,
     }
     _save(USERS_FILE, users)
 
     token = _create_token(user_id)
-    return {"token": token, "user_id": user_id, "credits": FREE_CREDITS, "username": req.username}
+    return {"token": token, "user_id": user_id, "credits": 0, "username": req.username}
 
 
 @app.post("/api/auth/login")
@@ -152,6 +152,34 @@ def deduct_credits(amount: int = 1, user_id: str = Depends(_get_user)):
     raise HTTPException(404, "User not found")
 
 
+@app.post("/api/stream/start")
+def stream_start(user_id: str = Depends(_get_user)):
+    users = _load(USERS_FILE)
+    for u in users.values():
+        if u["id"] == user_id:
+            if u["credits"] < 10:
+                raise HTTPException(402, f"Need at least 10 credits to start. You have {u['credits']}")
+            return {"credits": u["credits"], "credits_per_second": CREDITS_PER_SECOND, "max_seconds": u["credits"] // CREDITS_PER_SECOND}
+    raise HTTPException(404, "User not found")
+
+
+@app.post("/api/stream/tick")
+def stream_tick(seconds: int = 1, user_id: str = Depends(_get_user)):
+    cost = seconds * CREDITS_PER_SECOND
+    users = _load(USERS_FILE)
+    for u in users.values():
+        if u["id"] == user_id:
+            if u["credits"] < cost:
+                u["credits"] = 0
+                _save(USERS_FILE, users)
+                raise HTTPException(402, "Out of credits")
+            u["credits"] -= cost
+            u["total_used"] += cost
+            _save(USERS_FILE, users)
+            return {"credits": u["credits"], "deducted": cost, "remaining_seconds": u["credits"] // CREDITS_PER_SECOND}
+    raise HTTPException(404, "User not found")
+
+
 @app.get("/api/keys/generate")
 def generate_key(user_id: str = Depends(_get_user)):
     keys = _load(KEYS_FILE)
@@ -181,12 +209,18 @@ def health():
 @app.get("/api/pricing")
 def pricing():
     return {
-        "free_credits": FREE_CREDITS,
-        "cost_per_second": CREDIT_COST_PER_SECOND,
+        "credits_per_second": CREDITS_PER_SECOND,
         "plans": [
-            {"name": "Free", "credits": 1000, "price": 0},
-            {"name": "Starter", "credits": 5000, "price": 5},
-            {"name": "Pro", "credits": 25000, "price": 20},
-            {"name": "Enterprise", "credits": 100000, "price": 75},
+            {"id": "starter", "name": "Starter", "credits": 500, "price": 25, "description": "~4m 10s stream time"},
+            {"id": "basic", "name": "Basic", "credits": 1000, "price": 45, "description": "~8m 20s stream time"},
+            {"id": "plus", "name": "Plus", "credits": 2000, "price": 55, "description": "~16m 40s stream time"},
+            {"id": "pro", "name": "Pro", "credits": 5000, "price": 150, "description": "~41m 40s stream time"},
+            {"id": "premium", "name": "Premium", "credits": 999999, "price": 300, "description": "~8333m unlimited"},
+        ],
+        "notes": [
+            "2 credits are deducted per second of stream time",
+            "Credits never expire",
+            "500 credits = ~4 minutes 10 seconds",
+            "1000 credits = ~8 minutes 20 seconds",
         ],
     }

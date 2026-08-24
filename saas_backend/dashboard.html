@@ -63,7 +63,8 @@ h1{color:#533483;font-size:28px;margin-bottom:8px}
 </div>
 
 <div id="register-form" class="card hidden">
-<h2>Create Account — Get 1,000 Free Credits</h2>
+<h2>Create Account</h2>
+<p style="color:#888;font-size:13px;margin-bottom:12px">Register, then purchase credits to start streaming</p>
 <div id="reg-status"></div>
 <div class="form-group"><label>Username</label><input id="reg-user" placeholder="choose a username"></div>
 <div class="form-group"><label>Email</label><input id="reg-email" type="email" placeholder="your@email.com"></div>
@@ -89,9 +90,20 @@ h1{color:#533483;font-size:28px;margin-bottom:8px}
 </div>
 
 <div id="dash-plans" class="card hidden">
-<h2>Buy Credits</h2>
+<h2>Purchase Credits</h2>
+<p style="color:#888;font-size:13px;margin-bottom:16px">2 credits deducted per second of stream time. Credits never expire.</p>
 <div class="plans" id="plans-grid"></div>
 <button class="btn" style="margin-top:16px" onclick="buyCredits()">Purchase Selected Plan</button>
+<div style="margin-top:16px;padding:16px;background:#0f0f1a;border-radius:8px">
+<h3 style="color:#8b8bff;font-size:14px;margin-bottom:8px">How Credits Work</h3>
+<ul style="color:#888;font-size:12px;line-height:1.8;padding-left:16px">
+<li>2 credits are deducted per second of stream time</li>
+<li>500 credits = ~4 minutes 10 seconds</li>
+<li>1,000 credits = ~8 minutes 20 seconds</li>
+<li>5,000 credits = ~41 minutes 40 seconds</li>
+<li>Credits never expire</li>
+</ul>
+</div>
 </div>
 
 <div id="dash-api" class="card hidden">
@@ -180,7 +192,8 @@ async function loadPlans() {
             <div class="plan ${i===0?'selected':''}" onclick="selectPlan(${i})" data-idx="${i}">
                 <div class="plan-name">${plan.name}</div>
                 <div class="plan-credits">${plan.credits.toLocaleString()}</div>
-                <div class="plan-price">${plan.price===0?'Free':'$'+plan.price}</div>
+                <div class="plan-price">$${plan.price}</div>
+                <div class="plan-desc" style="color:#888;font-size:11px;margin-top:4px">${plan.description}</div>
             </div>
         `).join('');
         selectedPlan = p.plans[0];
