@@ -282,12 +282,30 @@ class ZeypherMainWindow(QMainWindow):
         self.lucy_key.setPlaceholderText("Lucy 2.5 API key...")
         self.lucy_key.textChanged.connect(lambda v: setattr(CONFIG.lucy, 'api_key', v))
         ag.addWidget(self.lucy_key, 0, 1)
+        ref1_row = QHBoxLayout()
+        self.lucy_ref_label = QLabel("No ref image")
+        self.lucy_ref_label.setStyleSheet("color: #888; font-size: 11px;")
+        ref1_row.addWidget(self.lucy_ref_label, stretch=1)
+        btn_ref1 = QPushButton("Load Ref")
+        btn_ref1.setFixedWidth(80)
+        btn_ref1.clicked.connect(self._load_lucy_reference)
+        ref1_row.addWidget(btn_ref1)
+        ag.addLayout(ref1_row, 1, 0, 1, 2)
         if HAS_FAL:
-            ag.addWidget(QLabel("fal.ai API Key:"), 1, 0)
+            ag.addWidget(QLabel("fal.ai API Key:"), 2, 0)
             self.fal_key = QLineEdit()
             self.fal_key.setEchoMode(QLineEdit.Password)
             self.fal_key.setPlaceholderText("fal.ai API key...")
-            ag.addWidget(self.fal_key, 1, 1)
+            ag.addWidget(self.fal_key, 2, 1)
+            ref2_row = QHBoxLayout()
+            self.fal_ref_label = QLabel("No ref image")
+            self.fal_ref_label.setStyleSheet("color: #888; font-size: 11px;")
+            ref2_row.addWidget(self.fal_ref_label, stretch=1)
+            btn_ref2 = QPushButton("Load Ref")
+            btn_ref2.setFixedWidth(80)
+            btn_ref2.clicked.connect(self._load_fal_reference)
+            ref2_row.addWidget(btn_ref2)
+            ag.addLayout(ref2_row, 3, 0, 1, 2)
         btn_row = QHBoxLayout()
         self.btn_lucy = QPushButton("Connect Lucy")
         self.btn_lucy.setObjectName("startBtn")
@@ -298,14 +316,15 @@ class ZeypherMainWindow(QMainWindow):
             self.btn_fal.setObjectName("startBtn")
             self.btn_fal.clicked.connect(self._toggle_fal)
             btn_row.addWidget(self.btn_fal)
-        ag.addLayout(btn_row, 2, 0, 1, 2)
+        row_idx = 4 if HAS_FAL else 2
+        ag.addLayout(btn_row, row_idx, 0, 1, 2)
         self.lucy_status = QLabel("Disconnected")
         self.lucy_status.setStyleSheet("color: #ff5555; font-size: 12px;")
-        ag.addWidget(self.lucy_status, 3, 0, 1, 2)
+        ag.addWidget(self.lucy_status, row_idx + 1, 0, 1, 2)
         if HAS_FAL:
             self.fal_status = QLabel("")
             self.fal_status.setStyleSheet("color: #888; font-size: 11px;")
-            ag.addWidget(self.fal_status, 4, 0, 1, 2)
+            ag.addWidget(self.fal_status, row_idx + 2, 0, 1, 2)
         ai_conn_grp.setLayout(ag)
         right_col.addWidget(ai_conn_grp)
 
@@ -1042,6 +1061,15 @@ class ZeypherMainWindow(QMainWindow):
             self.fal_engine.set_reference(path)
             self.fal_ref_label.setText(os.path.basename(path))
             self.fal_ref_label.setStyleSheet("color: #55ff55; font-size: 12px;")
+
+    def _load_fal_reference(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load fal.ai Reference", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        if path:
+            if self.fal_engine is None:
+                self.fal_engine = FalFaceSwap()
+            self.fal_engine.set_reference(path)
+            self.fal_ref_label.setText(os.path.basename(path))
+            self.fal_ref_label.setStyleSheet("color: #55ff55; font-size: 11px;")
 
     def _toggle_fal(self):
         if not HAS_FAL:
