@@ -8,8 +8,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
-from passlib.context import CryptContext
+from pydantic import BaseModel
 from jose import jwt, JWTError
 
 app = FastAPI(title="ZeypherLive API", version="1.0.0")
@@ -23,7 +22,17 @@ CREDITS_PER_SECOND = 2
 ADMIN_SECRET = os.environ.get("ZEYPHER_ADMIN_SECRET", "zeypher-admin-2024")
 BTC_ADDRESS = "bc1q3rq0c6j2mzz6la83t2j9mqw249fd7whyrp2u8l"
 
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+HASH_SALT = "zeypher-live-salt-2024"
+
+
+def _hash_password(password: str) -> str:
+    return hashlib.sha256((password + HASH_SALT).encode()).hexdigest()
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    return _hash_password(password) == hashed
+
+pwd_ctx = None
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 KEYS_FILE = os.path.join(DATA_DIR, "api_keys.json")
@@ -106,7 +115,7 @@ def register(req: RegisterReq):
     users[req.username] = {
         "id": user_id,
         "email": req.email,
-        "password": pwd_ctx.hash(req.password),
+        "password": _hash_password(req.password),
         "credits": 0,
         "created": datetime.utcnow().isoformat(),
         "total_used": 0,
@@ -121,7 +130,7 @@ def register(req: RegisterReq):
 def login(req: LoginReq):
     users = _load(USERS_FILE)
     user = users.get(req.username)
-    if not user or not pwd_ctx.verify(req.password, user["password"]):
+    if not user or not _verify_password(req.password, user["password"]):
         raise HTTPException(401, "Invalid credentials")
 
     token = _create_token(user["id"])
