@@ -624,7 +624,9 @@ class ZeypherMainWindow(QMainWindow):
         self.ip_status = QLabel("Install IP Webcam (Android) or DroidCam")
         self.ip_status.setStyleSheet("color: #888; font-size: 11px;")
         g3.addWidget(self.ip_status)
-        g3.addWidget(QLabel("Recommended apps: IP Webcam (free), DroidCam, Iriun Webcam", Qt.AlignLeft))
+        tip = QLabel("Recommended: IP Webcam (free Android app), DroidCam, Iriun Webcam")
+        tip.setStyleSheet("color: #666; font-size: 11px;")
+        g3.addWidget(tip)
         layout.addWidget(grp3)
         layout.addStretch()
         return w
