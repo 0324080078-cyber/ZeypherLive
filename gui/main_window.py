@@ -707,12 +707,9 @@ class ZeypherMainWindow(QMainWindow):
                 else:
                     self.lbl_ai_fps.setText("Waiting for fal.ai frames...")
             elif cam_frame is not None:
-                else:
-                    self.lbl_ai_fps.setText("Waiting for AI frames...")
-            elif cam_frame is not None:
                 ai_frame = cam_frame
                 self._display_frame(cam_frame, self.preview_ai)
-                self.lbl_ai_fps.setText("Connect Lucy for AI swap")
+                self.lbl_ai_fps.setText("Connect Lucy or fal.ai for AI swap")
             else:
                 self.preview_ai.setText("No output")
                 self.lbl_ai_fps.setText("")
