@@ -298,14 +298,14 @@ class ZeypherMainWindow(QMainWindow):
             self.btn_fal.setObjectName("startBtn")
             self.btn_fal.clicked.connect(self._toggle_fal)
             btn_row.addWidget(self.btn_fal)
-        ag.addLayout(btn_row)
+        ag.addLayout(btn_row, 2, 0, 1, 2)
         self.lucy_status = QLabel("Disconnected")
         self.lucy_status.setStyleSheet("color: #ff5555; font-size: 12px;")
-        ag.addWidget(self.lucy_status)
+        ag.addWidget(self.lucy_status, 3, 0, 1, 2)
         if HAS_FAL:
             self.fal_status = QLabel("")
             self.fal_status.setStyleSheet("color: #888; font-size: 11px;")
-            ag.addWidget(self.fal_status)
+            ag.addWidget(self.fal_status, 4, 0, 1, 2)
         ai_conn_grp.setLayout(ag)
         right_col.addWidget(ai_conn_grp)
 
