@@ -1,0 +1,30 @@
+# ZeypherLive — Dependencies
+# Core
+opencv-python>=4.8.0
+numpy>=1.24.0
+mediapipe>=0.10.0
+onnxruntime>=1.16.0
+
+# GUI
+PyQt5>=5.15.0
+PyQt5-sip>=12.11.0
+
+# Voice
+pyaudio>=0.2.13
+scipy>=1.11.0
+
+# OBS Bridge
+pyvirtualcam>=0.14.0
+
+# Lucy 2.5 / WebRTC
+aiohttp>=3.8.0
+decart>=0.1.5
+livekit>=1.1.0
+livekit-api>=1.2.0
+
+# Cloud Server
+websockets>=12.0
+
+# Utilities
+Pillow>=10.0.0
+requests>=2.31.0

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ZeypherLive — Dashboard</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0a0a0a;color:#e0e0e0;font-family:system-ui,-apple-system,sans-serif;min-height:100vh}
+.container{max-width:800px;margin:0 auto;padding:20px}
+h1{color:#533483;font-size:28px;margin-bottom:8px}
+.subtitle{color:#888;font-size:14px;margin-bottom:30px}
+.card{background:#1a1a2e;border:1px solid #333;border-radius:12px;padding:24px;margin-bottom:16px}
+.card h2{color:#8b8bff;font-size:18px;margin-bottom:16px}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;color:#aaa;font-size:13px;margin-bottom:6px}
+.form-group input{width:100%;padding:12px;background:#0f0f1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-size:14px}
+.form-group input:focus{outline:none;border-color:#533483}
+.btn{background:#533483;color:white;border:none;padding:12px 24px;border-radius:8px;font-size:14px;cursor:pointer;width:100%;font-weight:600}
+.btn:hover{background:#6a42a0}
+.btn:active{transform:scale(0.98)}
+.btn-outline{background:transparent;border:1px solid #533483;color:#8b8bff}
+.btn-outline:hover{background:#533483;color:white}
+.btn-danger{background:#ff5555}
+.credits-display{text-align:center;padding:30px}
+.credits-num{font-size:48px;font-weight:700;color:#55ff55}
+.credits-label{color:#888;font-size:14px;margin-top:4px}
+.plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px}
+.plan{background:#0f0f1a;border:1px solid #333;border-radius:10px;padding:20px;text-align:center;cursor:pointer;transition:border-color 0.2s}
+.plan:hover{border-color:#533483}
+.plan.selected{border-color:#55ff55;background:#0a1a0a}
+.plan-name{color:#8b8bff;font-size:16px;font-weight:600}
+.plan-credits{font-size:24px;font-weight:700;margin:8px 0}
+.plan-price{color:#888;font-size:13px}
+.api-key{background:#0f0f1a;padding:10px;border-radius:6px;font-family:monospace;font-size:12px;color:#55ff55;word-break:break-all;margin-top:8px;cursor:pointer}
+.hidden{display:none}
+.tabs{display:flex;gap:8px;margin-bottom:20px}
+.tab{padding:10px 20px;border-radius:8px;cursor:pointer;background:#1a1a2e;color:#888;border:1px solid #333}
+.tab.active{background:#533483;color:white;border-color:#533483}
+.status{padding:8px 12px;border-radius:6px;font-size:13px;margin-bottom:12px}
+.status-ok{background:#0a1a0a;color:#55ff55;border:1px solid #1a3a1a}
+.status-err{background:#1a0a0a;color:#ff5555;border:1px solid #3a1a1a}
+.footer{text-align:center;color:#555;font-size:12px;margin-top:40px;padding:20px}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>ZeypherLive</h1>
+<p class="subtitle">AI-Powered Face Swap & Voice Changer — SaaS Dashboard</p>
+
+<div id="auth-section">
+<div class="tabs">
+<div class="tab active" onclick="showTab('login')">Login</div>
+<div class="tab" onclick="showTab('register')">Register</div>
+</div>
+
+<div id="login-form" class="card">
+<h2>Login</h2>
+<div id="login-status"></div>
+<div class="form-group"><label>Username</label><input id="login-user" placeholder="username"></div>
+<div class="form-group"><label>Password</label><input id="login-pass" type="password" placeholder="password"></div>
+<button class="btn" onclick="doLogin()">Login</button>
+</div>
+
+<div id="register-form" class="card hidden">
+<h2>Create Account — Get 1,000 Free Credits</h2>
+<div id="reg-status"></div>
+<div class="form-group"><label>Username</label><input id="reg-user" placeholder="choose a username"></div>
+<div class="form-group"><label>Email</label><input id="reg-email" type="email" placeholder="your@email.com"></div>
+<div class="form-group"><label>Password</label><input id="reg-pass" type="password" placeholder="min 6 characters"></div>
+<button class="btn" onclick="doRegister()">Create Account</button>
+</div>
+</div>
+
+<div id="dashboard" class="hidden">
+<div class="tabs">
+<div class="tab active" onclick="showDashTab('credits')">Credits</div>
+<div class="tab" onclick="showDashTab('plans')">Buy Credits</div>
+<div class="tab" onclick="showDashTab('api')">API Key</div>
+<div class="tab" onclick="showDashTab('settings')">Settings</div>
+</div>
+
+<div id="dash-credits" class="card">
+<div class="credits-display">
+<div class="credits-num" id="credit-count">0</div>
+<div class="credits-label">Available Credits</div>
+</div>
+<div class="status status-ok" id="user-status"></div>
+</div>
+
+<div id="dash-plans" class="card hidden">
+<h2>Buy Credits</h2>
+<div class="plans" id="plans-grid"></div>
+<button class="btn" style="margin-top:16px" onclick="buyCredits()">Purchase Selected Plan</button>
+</div>
+
+<div id="dash-api" class="card hidden">
+<h2>API Key</h2>
+<p style="color:#888;font-size:13px;margin-bottom:12px">Use this key in ZeypherLive desktop app</p>
+<button class="btn btn-outline" onclick="generateKey()">Generate New Key</button>
+<div id="key-display"></div>
+<div id="key-list" style="margin-top:16px"></div>
+</div>
+
+<div id="dash-settings" class="card hidden">
+<h2>Account</h2>
+<p style="color:#888;font-size:13px" id="account-info"></p>
+<br>
+<button class="btn btn-danger" onclick="logout()">Logout</button>
+</div>
+</div>
+
+<div class="footer">ZeypherLive v1.0 — AI Face Swap & Voice Changer SaaS</div>
+</div>
+
+<script>
+const API = window.location.origin;
+let token = localStorage.getItem('zl_token');
+let selectedPlan = null;
+
+function showTab(t) {
+    document.querySelectorAll('.tabs .tab').forEach(e => e.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('login-form').classList.toggle('hidden', t !== 'login');
+    document.getElementById('register-form').classList.toggle('hidden', t !== 'register');
+}
+
+function showDashTab(t) {
+    document.querySelectorAll('#dashboard .tab').forEach(e => e.classList.remove('active'));
+    event.target.classList.add('active');
+    ['credits','plans','api','settings'].forEach(id => {
+        document.getElementById('dash-'+id).classList.toggle('hidden', id !== t);
+    });
+}
+
+async function api(path, method='GET', body=null) {
+    const opts = {method, headers:{'Content-Type':'application/json'}};
+    if (token) opts.headers['Authorization'] = 'Bearer ' + token;
+    if (body) opts.body = JSON.stringify(body);
+    const r = await fetch(API + path, opts);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.detail || 'Error');
+    return data;
+}
+
+async function doLogin() {
+    try {
+        const d = await api('/api/auth/login','POST',{username:document.getElementById('login-user').value,password:document.getElementById('login-pass').value});
+        token = d.token; localStorage.setItem('zl_token', token);
+        showDashboard();
+    } catch(e) { document.getElementById('login-status').innerHTML='<div class="status status-err">'+e.message+'</div>'; }
+}
+
+async function doRegister() {
+    try {
+        const d = await api('/api/auth/register','POST',{username:document.getElementById('reg-user').value,email:document.getElementById('reg-email').value,password:document.getElementById('reg-pass').value});
+        token = d.token; localStorage.setItem('zl_token', token);
+        showDashboard();
+    } catch(e) { document.getElementById('reg-status').innerHTML='<div class="status status-err">'+e.message+'</div>'; }
+}
+
+async function showDashboard() {
+    try {
+        const profile = await api('/api/user/profile');
+        document.getElementById('credit-count').textContent = profile.credits.toLocaleString();
+        document.getElementById('user-status').textContent = 'Welcome back! Account created: ' + new Date(profile.created).toLocaleDateString();
+        document.getElementById('account-info').textContent = 'User ID: ' + profile.id + ' | Total used: ' + profile.total_used + ' credits';
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('dashboard').classList.remove('hidden');
+        loadPlans();
+        loadKeys();
+    } catch(e) { logout(); }
+}
+
+async function loadPlans() {
+    try {
+        const p = await api('/api/pricing');
+        const grid = document.getElementById('plans-grid');
+        grid.innerHTML = p.plans.map((plan,i) => `
+            <div class="plan ${i===0?'selected':''}" onclick="selectPlan(${i})" data-idx="${i}">
+                <div class="plan-name">${plan.name}</div>
+                <div class="plan-credits">${plan.credits.toLocaleString()}</div>
+                <div class="plan-price">${plan.price===0?'Free':'$'+plan.price}</div>
+            </div>
+        `).join('');
+        selectedPlan = p.plans[0];
+    } catch(e) {}
+}
+
+function selectPlan(idx) {
+    document.querySelectorAll('.plan').forEach(e => e.classList.remove('selected'));
+    document.querySelectorAll('.plan')[idx].classList.add('selected');
+}
+
+async function buyCredits() {
+    alert('Payment integration coming soon! For now, contact admin to add credits.');
+}
+
+async function generateKey() {
+    try {
+        const d = await api('/api/keys/generate');
+        document.getElementById('key-display').innerHTML = '<div class="api-key" onclick="navigator.clipboard.writeText(this.textContent);this.style.color=\'#ffaa00\';setTimeout(()=>this.style.color=\'#55ff55\',1000)">' + d.api_key + '</div><p style="color:#888;font-size:12px;margin-top:4px">Click to copy — paste this in ZeypherLive desktop app</p>';
+        loadKeys();
+    } catch(e) { alert(e.message); }
+}
+
+async function loadKeys() {
+    try {
+        const d = await api('/api/keys/list');
+        document.getElementById('key-list').innerHTML = d.keys.length ? '<h3 style="color:#888;font-size:14px;margin-bottom:8px">Your Keys</h3>' + d.keys.map(k => `<div style="padding:8px;background:#0f0f1a;border-radius:6px;margin-bottom:4px;font-size:12px"><span style="color:#55ff55">${k.key}</span> <span style="color:#888">created ${new Date(k.created).toLocaleDateString()}</span></div>`).join('') : '';
+    } catch(e) {}
+}
+
+function logout() {
+    token = null; localStorage.removeItem('zl_token');
+    document.getElementById('auth-section').classList.remove('hidden');
+    document.getElementById('dashboard').classList.add('hidden');
+}
+
+if (token) showDashboard();
+</script>
+</body>
+</html>
