@@ -292,6 +292,7 @@ class ZeypherMainWindow(QMainWindow):
             self.fal_strength = QSlider(Qt.Horizontal)
             self.fal_strength.setRange(10, 100)
             self.fal_strength.setValue(75)
+            self._fal_strength_val = 0.75
             self.fal_strength.valueChanged.connect(lambda v: setattr(self, '_fal_strength_val', v / 100.0))
             fg.addWidget(self.fal_strength, 3, 1)
             self.fal_ref_label = QLabel("No reference")
@@ -703,9 +704,11 @@ class ZeypherMainWindow(QMainWindow):
                 if ai_frame is not None:
                     self._display_frame(ai_frame, self.preview_ai)
                     stats = self.fal_engine.stats
-                    self.lbl_ai_fps.setText(f"fal.ai — {stats['model_name']} — {stats['frames_received']} frames")
+                    self.lbl_ai_fps.setText(f"fal.ai — {stats['model_name']} — sent:{stats['frames_sent']} rx:{stats['frames_received']}")
                 else:
-                    self.lbl_ai_fps.setText("Waiting for fal.ai frames...")
+                    busy = "processing..." if self.fal_engine._busy else "ready"
+                    err = f" [{self.fal_engine._last_error}]" if self.fal_engine._last_error else ""
+                    self.lbl_ai_fps.setText(f"fal.ai — {busy}{err}")
             elif cam_frame is not None:
                 ai_frame = cam_frame
                 self._display_frame(cam_frame, self.preview_ai)
@@ -994,7 +997,7 @@ class ZeypherMainWindow(QMainWindow):
                     self.fal_engine = FalFaceSwap()
                 self.fal_engine.set_model(model)
                 self.fal_engine._prompt = self.fal_prompt.text()
-                self.fal_engine._strength = self.fal_strength.value() / 100.0
+                self.fal_engine._strength = self._fal_strength_val
                 self.fal_status.setText("Connecting...")
                 self.fal_status.setStyleSheet("color: #ffaa00; font-size: 12px;")
                 if self.fal_engine.connect(key):
