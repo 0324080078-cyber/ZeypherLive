@@ -17,7 +17,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 SECRET_KEY = os.environ.get("ZEYPHER_SECRET", "zeypher-live-secret-key-change-in-production")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 72
-FREE_CREDITS = 0
+FREE_CREDITS = 1000
 CREDITS_PER_SECOND = 2
 ADMIN_SECRET = os.environ.get("ZEYPHER_ADMIN_SECRET", "zeypher-admin-2024")
 BTC_ADDRESS = "bc1q3rq0c6j2mzz6la83t2j9mqw249fd7whyrp2u8l"
@@ -116,14 +116,14 @@ def register(req: RegisterReq):
         "id": user_id,
         "email": req.email,
         "password": _hash_password(req.password),
-        "credits": 0,
+        "credits": FREE_CREDITS,
         "created": datetime.utcnow().isoformat(),
         "total_used": 0,
     }
     _save(USERS_FILE, users)
 
     token = _create_token(user_id)
-    return {"token": token, "user_id": user_id, "credits": 0, "username": req.username}
+    return {"token": token, "user_id": user_id, "credits": FREE_CREDITS, "username": req.username}
 
 
 @app.post("/api/auth/login")
