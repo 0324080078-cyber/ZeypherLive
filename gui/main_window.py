@@ -24,6 +24,7 @@ from face_swap.local_engine import LocalFaceSwap
 from voice_changer.engine import VoiceChanger
 from voice_changer.realtime_engine import RealtimeVoiceChanger
 from voice_changer.lip_sync import LipSyncEngine
+from voice_changer.rvc_engine import RVCVoiceEngine
 from obs_bridge.bridge import OBSBridge
 from obs_bridge.stream_server import StreamServer
 from cloud_sync.server import CloudSyncServer
@@ -35,6 +36,13 @@ try:
 except Exception as e:
     print(f"[GUI] Lucy import failed: {e}")
     HAS_LUCY = False
+
+try:
+    from lucy_engine.fal_client import FalFaceSwap
+    HAS_FAL = True
+except Exception as e:
+    print(f"[GUI] fal.ai import failed: {e}")
+    HAS_FAL = False
 
 
 class WorkerSignals(QObject):
@@ -94,6 +102,8 @@ class ZeypherMainWindow(QMainWindow):
         self.cloud_server = CloudSyncServer()
         self.billing = CreditBilling()
         self.lucy_engine = None
+        self.fal_engine = None
+        self.rvc_engine = RVCVoiceEngine()
 
         try:
             self.body_tracker = BodyTracker()
@@ -263,6 +273,43 @@ class ZeypherMainWindow(QMainWindow):
         lucy_grp.setLayout(lg)
         right_col.addWidget(lucy_grp)
 
+        if HAS_FAL:
+            fal_grp = QGroupBox("fal.ai Face Swap (cloud AI, cheap)")
+            fg = QGridLayout()
+            fg.addWidget(QLabel("API Key:"), 0, 0)
+            self.fal_key = QLineEdit()
+            self.fal_key.setEchoMode(QLineEdit.Password)
+            self.fal_key.setPlaceholderText("fal.ai API key...")
+            fg.addWidget(self.fal_key, 0, 1)
+            fg.addWidget(QLabel("Model:"), 1, 0)
+            self.fal_model = QComboBox()
+            self.fal_model.addItems(["face-swap", "instantid", "ip-adapter", "face-couple", "face-morph"])
+            fg.addWidget(self.fal_model, 1, 1)
+            fg.addWidget(QLabel("Prompt:"), 2, 0)
+            self.fal_prompt = QLineEdit("Substitute the character with the reference person")
+            fg.addWidget(self.fal_prompt, 2, 1)
+            fg.addWidget(QLabel("Strength:"), 3, 0)
+            self.fal_strength = QSlider(Qt.Horizontal)
+            self.fal_strength.setRange(10, 100)
+            self.fal_strength.setValue(75)
+            self.fal_strength.valueChanged.connect(lambda v: setattr(self, '_fal_strength_val', v / 100.0))
+            fg.addWidget(self.fal_strength, 3, 1)
+            self.fal_ref_label = QLabel("No reference")
+            self.fal_ref_label.setStyleSheet("color: #888; font-size: 12px;")
+            fg.addWidget(self.fal_ref_label, 4, 0, 1, 2)
+            btn_fal_ref = QPushButton("Load Ref Image")
+            btn_fal_ref.clicked.connect(self._load_fal_reference)
+            fg.addWidget(btn_fal_ref, 5, 0, 1, 2)
+            self.btn_fal = QPushButton("Connect fal.ai")
+            self.btn_fal.setObjectName("startBtn")
+            self.btn_fal.clicked.connect(self._toggle_fal)
+            fg.addWidget(self.btn_fal, 6, 0, 1, 2)
+            self.fal_status = QLabel("Disconnected")
+            self.fal_status.setStyleSheet("color: #ff5555; font-size: 12px;")
+            fg.addWidget(self.fal_status, 7, 0, 1, 2)
+            fal_grp.setLayout(fg)
+            right_col.addWidget(fal_grp)
+
         settings_tabs = QTabWidget()
         settings_tabs.addTab(self._build_face_tab(), "Face")
         settings_tabs.addTab(self._build_body_tab(), "Body")
@@ -284,7 +331,12 @@ class ZeypherMainWindow(QMainWindow):
         row = QHBoxLayout()
         row.addWidget(QLabel("Method:"))
         self.face_method = QComboBox()
-        self.face_method.addItems(["lucy", "local"])
+        methods = ["local"]
+        if HAS_LUCY:
+            methods.insert(0, "lucy")
+        if HAS_FAL:
+            methods.insert(0, "fal.ai")
+        self.face_method.addItems(methods)
         row.addWidget(self.face_method)
         layout.addLayout(row)
         btn_snap = QPushButton("Snapshot as Source")
@@ -425,6 +477,31 @@ class ZeypherMainWindow(QMainWindow):
         self.lip_sync_status.setStyleSheet("color: #888; font-size: 11px;")
         g3.addWidget(self.lip_sync_status)
         layout.addWidget(grp3)
+
+        grp4 = QGroupBox("RVC Voice Cloning (free local, needs GPU)")
+        g4 = QVBoxLayout(grp4)
+        self.rvc_model_path = QLineEdit()
+        self.rvc_model_path.setPlaceholderText("Path to RVC .pth model file...")
+        g4.addWidget(self.rvc_model_path)
+        btn_rvc_model = QPushButton("Load Model")
+        btn_rvc_model.clicked.connect(self._load_rvc_model)
+        g4.addWidget(btn_rvc_model)
+        rvc_row4 = QHBoxLayout()
+        rvc_row4.addWidget(QLabel("Pitch Shift:"))
+        self.rvc_pitch_shift = QSlider(Qt.Horizontal)
+        self.rvc_pitch_shift.setRange(-12, 12)
+        self.rvc_pitch_shift.setValue(0)
+        self.rvc_pitch_shift.valueChanged.connect(lambda v: setattr(self.rvc_engine, '_pitch_shift', v))
+        rvc_row4.addWidget(self.rvc_pitch_shift)
+        self.rvc_pitch_lbl2 = QLabel("0")
+        self.rvc_pitch_lbl2.setFixedWidth(30)
+        self.rvc_pitch_shift.valueChanged.connect(lambda v: self.rvc_pitch_lbl2.setText(str(v)))
+        rvc_row4.addWidget(self.rvc_pitch_lbl2)
+        g4.addLayout(rvc_row4)
+        self.rvc_engine_status = QLabel("No model loaded")
+        self.rvc_engine_status.setStyleSheet("color: #888; font-size: 11px;")
+        g4.addWidget(self.rvc_engine_status)
+        layout.addWidget(grp4)
 
         layout.addStretch()
         return w
@@ -617,7 +694,19 @@ class ZeypherMainWindow(QMainWindow):
                 ai_frame = self.lucy_engine.read()
                 if ai_frame is not None:
                     self._display_frame(ai_frame, self.preview_ai)
-                    self.lbl_ai_fps.setText(f"Sent: {self.lucy_engine._frames_sent} | RX: {self.lucy_engine._frames_received}")
+                    self.lbl_ai_fps.setText(f"Lucy — Sent: {self.lucy_engine._frames_sent} | RX: {self.lucy_engine._frames_received}")
+                else:
+                    self.lbl_ai_fps.setText("Waiting for Lucy frames...")
+            elif self.fal_engine and self.fal_engine.connected:
+                self.fal_engine.push_frame(cam_frame)
+                ai_frame = self.fal_engine.read()
+                if ai_frame is not None:
+                    self._display_frame(ai_frame, self.preview_ai)
+                    stats = self.fal_engine.stats
+                    self.lbl_ai_fps.setText(f"fal.ai — {stats['model_name']} — {stats['frames_received']} frames")
+                else:
+                    self.lbl_ai_fps.setText("Waiting for fal.ai frames...")
+            elif cam_frame is not None:
                 else:
                     self.lbl_ai_fps.setText("Waiting for AI frames...")
             elif cam_frame is not None:
@@ -879,6 +968,60 @@ class ZeypherMainWindow(QMainWindow):
         except Exception as e:
             print(f"[GUI] Stream error: {e}")
 
+    def _load_fal_reference(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load fal.ai Reference", "", "Images (*.png *.jpg *.jpeg *.webp)")
+        if path:
+            if self.fal_engine is None:
+                self.fal_engine = FalFaceSwap()
+            self.fal_engine.set_reference(path)
+            self.fal_ref_label.setText(os.path.basename(path))
+            self.fal_ref_label.setStyleSheet("color: #55ff55; font-size: 12px;")
+
+    def _toggle_fal(self):
+        if not HAS_FAL:
+            QMessageBox.warning(self, "fal.ai", "fal.ai module not available.")
+            return
+        try:
+            if self.fal_engine and self.fal_engine.connected:
+                self.fal_engine.disconnect()
+                self.fal_status.setText("Disconnected")
+                self.fal_status.setStyleSheet("color: #ff5555; font-size: 12px;")
+                self.btn_fal.setText("Connect fal.ai")
+            else:
+                key = self.fal_key.text().strip()
+                if not key:
+                    QMessageBox.warning(self, "fal.ai", "Enter your fal.ai API key first.")
+                    return
+                model = self.fal_model.currentText()
+                if self.fal_engine is None:
+                    self.fal_engine = FalFaceSwap()
+                self.fal_engine.set_model(model)
+                self.fal_engine._prompt = self.fal_prompt.text()
+                self.fal_engine._strength = self.fal_strength.value() / 100.0
+                self.fal_status.setText("Connecting...")
+                self.fal_status.setStyleSheet("color: #ffaa00; font-size: 12px;")
+                if self.fal_engine.connect(key):
+                    self.fal_status.setText(f"Connected — {self.fal_engine.MODELS[model]['name']}")
+                    self.fal_status.setStyleSheet("color: #55ff55; font-size: 12px;")
+                    self.btn_fal.setText("Disconnect fal.ai")
+                else:
+                    err = self.fal_engine.last_error
+                    self.fal_status.setText(f"Failed: {err}")
+                    self.fal_status.setStyleSheet("color: #ff5555; font-size: 12px;")
+        except Exception as e:
+            print(f"[GUI] fal.ai error: {e}")
+            traceback.print_exc()
+
+    def _load_rvc_model(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Load RVC Model", "", "Models (*.pth)")
+        if path:
+            if self.rvc_engine.load_model(path):
+                self.rvc_engine_status.setText(f"Loaded: {os.path.basename(path)}")
+                self.rvc_engine_status.setStyleSheet("color: #55ff55; font-size: 11px;")
+            else:
+                self.rvc_engine_status.setText("Load failed — install torch")
+                self.rvc_engine_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+
     def _update_stats(self):
         pass
 
@@ -898,6 +1041,10 @@ class ZeypherMainWindow(QMainWindow):
             self.billing.stop_stream_billing()
             if self.lucy_engine:
                 self.lucy_engine.stop()
+            if self.fal_engine:
+                self.fal_engine.disconnect()
+            if self.rvc_engine.running:
+                self.rvc_engine.stop()
             CONFIG.save()
         except Exception:
             pass
