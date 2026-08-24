@@ -133,7 +133,8 @@ class FaceAnalyzer:
                 return embedding.flatten()
             except Exception:
                 pass
-        return np.random.randn(512).astype(np.float32)
+        gray = cv2.cvtColor(face_resized, cv2.COLOR_BGR2GRAY).flatten().astype(np.float32) / 255.0
+        return gray[:512] if len(gray) >= 512 else np.pad(gray, (0, 512 - len(gray)))
 
 
 class FaceSwapEngine:

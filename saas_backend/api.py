@@ -20,11 +20,14 @@ ALGORITHM = "HS256"
 TOKEN_EXPIRE_HOURS = 72
 FREE_CREDITS = 0
 CREDITS_PER_SECOND = 2
+ADMIN_SECRET = os.environ.get("ZEYPHER_ADMIN_SECRET", "zeypher-admin-2024")
+BTC_ADDRESS = "bc1q3rq0c6j2mzz6la83t2j9mqw249fd7whyrp2u8l"
 
 pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
 DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
 USERS_FILE = os.path.join(DATA_DIR, "users.json")
 KEYS_FILE = os.path.join(DATA_DIR, "api_keys.json")
+PROOFS_FILE = os.path.join(DATA_DIR, "payment_proofs.json")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -54,6 +57,18 @@ class LoginReq(BaseModel):
 
 class CreditReq(BaseModel):
     amount: int
+
+
+class ProofReq(BaseModel):
+    username: str
+    plan: str
+    txid: str
+
+
+class AdminReq(BaseModel):
+    secret: str
+    username: str
+    credits: int
 
 
 def _create_token(user_id: str) -> str:
@@ -210,6 +225,7 @@ def health():
 def pricing():
     return {
         "credits_per_second": CREDITS_PER_SECOND,
+        "btc_address": BTC_ADDRESS,
         "plans": [
             {"id": "starter", "name": "Starter", "credits": 500, "price": 25, "description": "~4m 10s stream time"},
             {"id": "basic", "name": "Basic", "credits": 1000, "price": 45, "description": "~8m 20s stream time"},
@@ -220,7 +236,88 @@ def pricing():
         "notes": [
             "2 credits are deducted per second of stream time",
             "Credits never expire",
-            "500 credits = ~4 minutes 10 seconds",
-            "1000 credits = ~8 minutes 20 seconds",
         ],
     }
+
+
+PLAN_CREDITS = {
+    "Starter - 500 Credits - $25": 500,
+    "Basic - 1000 Credits - $45": 1000,
+    "Plus - 2000 Credits - $55": 2000,
+    "Pro - 5000 Credits - $150": 5000,
+    "Premium - 999999 Credits - $300": 999999,
+}
+
+
+@app.post("/api/payment/proof")
+def submit_proof(req: ProofReq):
+    users = _load(USERS_FILE)
+    if req.username not in users:
+        raise HTTPException(404, "User not found")
+    if req.plan not in PLAN_CREDITS:
+        raise HTTPException(400, "Invalid plan")
+    proofs = _load(PROOFS_FILE)
+    proof_id = str(uuid.uuid4())[:8]
+    proofs[proof_id] = {
+        "user": req.username,
+        "plan": req.plan,
+        "txid": req.txid,
+        "credits": PLAN_CREDITS[req.plan],
+        "status": "pending",
+        "created": datetime.utcnow().isoformat(),
+    }
+    _save(PROOFS_FILE, proofs)
+    return {"message": "Payment proof submitted. Admin will verify and add credits within 24 hours.", "proof_id": proof_id}
+
+
+@app.get("/api/admin/proofs")
+def list_proofs(secret: str = Header(None)):
+    if secret != ADMIN_SECRET:
+        raise HTTPException(403, "Unauthorized")
+    proofs = _load(PROOFS_FILE)
+    pending = {k: v for k, v in proofs.items() if v["status"] == "pending"}
+    return {"proofs": pending}
+
+
+@app.post("/api/admin/approve")
+def approve_proof(req: AdminReq):
+    if req.secret != ADMIN_SECRET:
+        raise HTTPException(403, "Unauthorized")
+    proofs = _load(PROOFS_FILE)
+    users = _load(USERS_FILE)
+    for pid, proof in proofs.items():
+        if proof["user"] == req.username and proof["status"] == "pending":
+            proof["status"] = "approved"
+            proof["approved_at"] = datetime.utcnow().isoformat()
+            _save(PROOFS_FILE, proofs)
+            if req.username in users:
+                users[req.username]["credits"] += proof["credits"]
+                _save(USERS_FILE, users)
+                return {"message": f"Added {proof['credits']} credits to {req.username}", "credits": users[req.username]["credits"]}
+    raise HTTPException(404, "No pending proof found for this user")
+
+
+@app.post("/api/admin/deny")
+def deny_proof(req: AdminReq):
+    if req.secret != ADMIN_SECRET:
+        raise HTTPException(403, "Unauthorized")
+    proofs = _load(PROOFS_FILE)
+    for pid, proof in proofs.items():
+        if proof["user"] == req.username and proof["status"] == "pending":
+            proof["status"] = "denied"
+            proof["denied_at"] = datetime.utcnow().isoformat()
+            _save(PROOFS_FILE, proofs)
+            return {"message": f"Denied proof for {req.username}"}
+    raise HTTPException(404, "No pending proof found for this user")
+
+
+@app.post("/api/admin/add_credits")
+def admin_add_credits(req: AdminReq):
+    if req.secret != ADMIN_SECRET:
+        raise HTTPException(403, "Unauthorized")
+    users = _load(USERS_FILE)
+    if req.username not in users:
+        raise HTTPException(404, "User not found")
+    users[req.username]["credits"] += req.credits
+    _save(USERS_FILE, users)
+    return {"credits": users[req.username]["credits"], "added": req.credits}

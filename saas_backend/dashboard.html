@@ -93,7 +93,46 @@ h1{color:#533483;font-size:28px;margin-bottom:8px}
 <h2>Purchase Credits</h2>
 <p style="color:#888;font-size:13px;margin-bottom:16px">2 credits deducted per second of stream time. Credits never expire.</p>
 <div class="plans" id="plans-grid"></div>
-<button class="btn" style="margin-top:16px" onclick="buyCredits()">Purchase Selected Plan</button>
+
+<div style="margin-top:20px;padding:20px;background:#0f0f1a;border-radius:10px;border:1px solid #333">
+<h3 style="color:#8b8bff;font-size:16px;margin-bottom:12px">How to Pay (Bitcoin)</h3>
+<ol style="color:#e0e0e0;font-size:13px;line-height:2;padding-left:18px">
+<li>Select a plan above</li>
+<li>Send the exact amount in BTC to this address:</li>
+</ol>
+<div style="background:#1a1a2e;padding:12px;border-radius:8px;font-family:monospace;font-size:14px;color:#55ff55;word-break:break-all;margin:8px 0;text-align:center;cursor:pointer" onclick="navigator.clipboard.writeText('bc1q3rq0c6j2mzz6la83t2j9mqw249fd7whyrp2u8l');this.style.color='#ffaa00';setTimeout(()=>this.style.color='#55ff55',1000)">bc1q3rq0c6j2mzz6la83t2j9mqw249fd7whyrp2u8l</div>
+<p style="color:#888;font-size:12px;text-align:center;margin-bottom:8px">Click address to copy</p>
+<ol start="3" style="color:#e0e0e0;font-size:13px;line-height:2;padding-left:18px">
+<li>Take a screenshot of your payment</li>
+<li>Paste the screenshot link below and submit</li>
+<li>Admin will verify and add credits within 24 hours</li>
+</ol>
+</div>
+
+<div style="margin-top:16px;padding:16px;background:#0f0f1a;border-radius:10px;border:1px solid #333">
+<h3 style="color:#8b8bff;font-size:14px;margin-bottom:12px">Submit Payment Proof</h3>
+<div class="form-group">
+<label>Your Username</label>
+<input id="proof-user" placeholder="your username">
+</div>
+<div class="form-group">
+<label>Plan Selected</label>
+<select id="proof-plan" style="width:100%;padding:12px;background:#1a1a2e;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-size:14px">
+<option value="Starter - 500 Credits - $25">Starter - 500 Credits - $25</option>
+<option value="Basic - 1000 Credits - $45">Basic - 1000 Credits - $45</option>
+<option value="Plus - 2000 Credits - $55">Plus - 2000 Credits - $55</option>
+<option value="Pro - 5000 Credits - $150">Pro - 5000 Credits - $150</option>
+<option value="Premium - 999999 Credits - $300">Premium - 999999 Credits - $300</option>
+</select>
+</div>
+<div class="form-group">
+<label>Transaction ID or Screenshot Link</label>
+<input id="proof-txid" placeholder="BTC transaction ID or image link">
+</div>
+<button class="btn" onclick="submitProof()">Submit Payment Proof</button>
+<div id="proof-status" style="margin-top:8px"></div>
+</div>
+
 <div style="margin-top:16px;padding:16px;background:#0f0f1a;border-radius:8px">
 <h3 style="color:#8b8bff;font-size:14px;margin-bottom:8px">How Credits Work</h3>
 <ul style="color:#888;font-size:12px;line-height:1.8;padding-left:16px">
@@ -205,8 +244,20 @@ function selectPlan(idx) {
     document.querySelectorAll('.plan')[idx].classList.add('selected');
 }
 
-async function buyCredits() {
-    alert('Payment integration coming soon! For now, contact admin to add credits.');
+async function submitProof() {
+    const user = document.getElementById('proof-user').value.trim();
+    const plan = document.getElementById('proof-plan').value;
+    const txid = document.getElementById('proof-txid').value.trim();
+    if (!user || !txid) {
+        document.getElementById('proof-status').innerHTML = '<div class="status status-err">Fill in all fields</div>';
+        return;
+    }
+    try {
+        const d = await api('/api/payment/proof', 'POST', {username: user, plan: plan, txid: txid});
+        document.getElementById('proof-status').innerHTML = '<div class="status status-ok">' + d.message + '</div>';
+    } catch(e) {
+        document.getElementById('proof-status').innerHTML = '<div class="status status-err">' + e.message + '</div>';
+    }
 }
 
 async function generateKey() {

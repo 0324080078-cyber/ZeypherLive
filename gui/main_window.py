@@ -26,6 +26,7 @@ from voice_changer.realtime_engine import RealtimeVoiceChanger
 from obs_bridge.bridge import OBSBridge
 from obs_bridge.stream_server import StreamServer
 from cloud_sync.server import CloudSyncServer
+from saas_backend.billing_client import CreditBilling
 
 try:
     from lucy_engine.lucy_client import LucyEngine
@@ -89,6 +90,7 @@ class ZeypherMainWindow(QMainWindow):
         self.obs_bridge = OBSBridge()
         self.stream_server = StreamServer()
         self.cloud_server = CloudSyncServer()
+        self.billing = CreditBilling()
         self.lucy_engine = None
 
         try:
@@ -96,6 +98,14 @@ class ZeypherMainWindow(QMainWindow):
             print("[GUI] Body tracker initialized")
         except Exception as e:
             print(f"[GUI] Body tracker failed: {e}")
+
+        try:
+            if self.local_face.initialize():
+                print("[GUI] Local face swap ready")
+            else:
+                print("[GUI] Local face swap init failed")
+        except Exception as e:
+            print(f"[GUI] Local face swap error: {e}")
 
         if HAS_LUCY:
             self.lucy_engine = LucyEngine()
@@ -111,6 +121,11 @@ class ZeypherMainWindow(QMainWindow):
         self._preview_timer = QTimer()
         self._preview_timer.timeout.connect(self._update_preview)
         self._preview_timer.start(33)
+
+        self.billing.set_callbacks(
+            on_credits=lambda c: QTimer.singleShot(0, lambda: self.lbl_ai_fps.setText(f"Credits: {c}")),
+            on_error=lambda e: QTimer.singleShot(0, lambda: self.statusBar().showMessage(f"Billing: {e}")),
+        )
 
         print("[GUI] Window ready")
 
@@ -197,17 +212,36 @@ class ZeypherMainWindow(QMainWindow):
 
         lucy_grp = QGroupBox("Lucy 2.5 Connection")
         lg = QGridLayout()
-        lg.addWidget(QLabel("API Key:"), 0, 0)
+        lg.addWidget(QLabel("SaaS Server:"), 0, 0)
+        self.saaS_url = QLineEdit("http://localhost:8000")
+        self.saaS_url.setPlaceholderText("SaaS server URL")
+        lg.addWidget(self.saaS_url, 0, 1)
+        lg.addWidget(QLabel("Username:"), 1, 0)
+        self.saaS_user = QLineEdit()
+        self.saaS_user.setPlaceholderText("SaaS username")
+        lg.addWidget(self.saaS_user, 1, 1)
+        lg.addWidget(QLabel("Password:"), 2, 0)
+        self.saaS_pass = QLineEdit()
+        self.saaS_pass.setEchoMode(QLineEdit.Password)
+        self.saaS_pass.setPlaceholderText("SaaS password")
+        lg.addWidget(self.saaS_pass, 2, 1)
+        self.btn_saaS_login = QPushButton("Login & Check Credits")
+        self.btn_saaS_login.clicked.connect(self._saas_login)
+        lg.addWidget(self.btn_saaS_login, 3, 0, 1, 2)
+        self.saaS_status = QLabel("")
+        self.saaS_status.setStyleSheet("color: #888; font-size: 11px;")
+        lg.addWidget(self.saaS_status, 4, 0, 1, 2)
+        lg.addWidget(QLabel("API Key:"), 5, 0)
         self.lucy_key = QLineEdit()
         self.lucy_key.setEchoMode(QLineEdit.Password)
         self.lucy_key.setPlaceholderText("Enter Decart API key...")
         self.lucy_key.textChanged.connect(lambda v: setattr(CONFIG.lucy, 'api_key', v))
-        lg.addWidget(self.lucy_key, 0, 1)
-        lg.addWidget(QLabel("Prompt:"), 1, 0)
+        lg.addWidget(self.lucy_key, 5, 1)
+        lg.addWidget(QLabel("Prompt:"), 6, 0)
         self.lucy_prompt = QLineEdit()
         self.lucy_prompt.setPlaceholderText("e.g. Make the person look like...")
         self.lucy_prompt.textChanged.connect(lambda v: setattr(CONFIG.lucy, 'prompt', v))
-        lg.addWidget(self.lucy_prompt, 1, 1)
+        lg.addWidget(self.lucy_prompt, 6, 1)
         ref_row = QHBoxLayout()
         self.lucy_ref_label = QLabel("No reference")
         self.lucy_ref_label.setStyleSheet("color: #888; font-size: 12px;")
@@ -216,14 +250,14 @@ class ZeypherMainWindow(QMainWindow):
         btn_ref.setFixedWidth(90)
         btn_ref.clicked.connect(self._load_lucy_reference)
         ref_row.addWidget(btn_ref)
-        lg.addLayout(ref_row, 2, 0, 1, 2)
+        lg.addLayout(ref_row, 7, 0, 1, 2)
         self.btn_lucy = QPushButton("Connect to Lucy")
         self.btn_lucy.setObjectName("startBtn")
         self.btn_lucy.clicked.connect(self._toggle_lucy)
-        lg.addWidget(self.btn_lucy, 3, 0, 1, 2)
+        lg.addWidget(self.btn_lucy, 8, 0, 1, 2)
         self.lucy_status = QLabel("Disconnected")
         self.lucy_status.setStyleSheet("color: #ff5555; font-size: 12px;")
-        lg.addWidget(self.lucy_status, 4, 0, 1, 2)
+        lg.addWidget(self.lucy_status, 9, 0, 1, 2)
         lucy_grp.setLayout(lg)
         right_col.addWidget(lucy_grp)
 
@@ -483,8 +517,30 @@ class ZeypherMainWindow(QMainWindow):
         try:
             cam_frame = self.camera.read()
             if cam_frame is not None:
-                self._display_frame(cam_frame, self.preview_camera)
+                display_frame = cam_frame.copy()
+
+                if self.body_tracker is not None and self.body_enabled.isChecked():
+                    try:
+                        result = self.body_tracker.process(display_frame)
+                        if result is not None:
+                            if self.show_skeleton.isChecked():
+                                display_frame = self.body_tracker.draw_landmarks(display_frame, result)
+                    except Exception as e:
+                        pass
+
+                if self.face_enabled.isChecked():
+                    method = self.face_method.currentText()
+                    if method == "local" and self.local_face.available and self.local_face.has_source:
+                        try:
+                            swapped = self.local_face.process(display_frame)
+                            if swapped is not None:
+                                display_frame = swapped
+                        except Exception as e:
+                            pass
+
+                self._display_frame(display_frame, self.preview_camera)
                 self.lbl_cam_fps.setText(f"FPS: {self.camera.fps_actual:.0f}")
+
                 if self.lucy_engine and self.lucy_engine.connected:
                     self.lucy_engine.push_frame(cam_frame)
             elif self.camera.running:
@@ -561,6 +617,28 @@ class ZeypherMainWindow(QMainWindow):
             self.lucy_ref_label.setText(os.path.basename(path))
             self.lucy_ref_label.setStyleSheet("color: #8b8bff; font-size: 12px;")
 
+    def _saas_login(self):
+        url = self.saaS_url.text().strip()
+        user = self.saaS_user.text().strip()
+        pw = self.saaS_pass.text().strip()
+        if not url or not user or not pw:
+            self.saaS_status.setText("Fill in all fields")
+            self.saaS_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+            return
+        self.billing.api_url = url
+        self.saaS_status.setText("Logging in...")
+        self.saaS_status.setStyleSheet("color: #ffaa00; font-size: 11px;")
+        import threading
+        def _do_login():
+            ok = self.billing.login(user, pw)
+            if ok:
+                QTimer.singleShot(0, lambda: self.saaS_status.setText(f"Logged in — {self.billing.credits} credits"))
+                QTimer.singleShot(0, lambda: self.saaS_status.setStyleSheet("color: #55ff55; font-size: 11px;"))
+            else:
+                QTimer.singleShot(0, lambda: self.saaS_status.setText("Login failed"))
+                QTimer.singleShot(0, lambda: self.saaS_status.setStyleSheet("color: #ff5555; font-size: 11px;"))
+        threading.Thread(target=_do_login, daemon=True).start()
+
     def _toggle_voice(self, state):
         try:
             if state == Qt.Checked:
@@ -613,6 +691,7 @@ class ZeypherMainWindow(QMainWindow):
         try:
             if self.lucy_engine and self.lucy_engine.connected:
                 self.lucy_engine.stop()
+                self.billing.stop_stream_billing()
                 self.lucy_status.setText("Disconnected")
                 self.lucy_status.setStyleSheet("color: #ff5555; font-size: 12px;")
                 self.btn_lucy.setText("Connect to Lucy")
@@ -622,6 +701,12 @@ class ZeypherMainWindow(QMainWindow):
                 if not CONFIG.lucy.api_key:
                     QMessageBox.warning(self, "Lucy", "Enter your Decart API key first.")
                     return
+                if self.billing.token:
+                    can, msg = self.billing.can_start_stream()
+                    if not can:
+                        QMessageBox.warning(self, "Credits", msg)
+                        return
+                    self.billing.start_stream_billing()
                 self.lucy_status.setText("Connecting...")
                 self.lucy_status.setStyleSheet("color: #ffaa00; font-size: 12px;")
                 if self.lucy_engine is None:
