@@ -23,6 +23,7 @@ from face_swap.engine import FaceSwapEngine
 from face_swap.local_engine import LocalFaceSwap
 from voice_changer.engine import VoiceChanger
 from voice_changer.realtime_engine import RealtimeVoiceChanger
+from voice_changer.lip_sync import LipSyncEngine
 from obs_bridge.bridge import OBSBridge
 from obs_bridge.stream_server import StreamServer
 from cloud_sync.server import CloudSyncServer
@@ -87,6 +88,7 @@ class ZeypherMainWindow(QMainWindow):
         self.local_face = LocalFaceSwap()
         self.voice_changer = VoiceChanger()
         self.realtime_vc = RealtimeVoiceChanger()
+        self.lip_sync = LipSyncEngine()
         self.obs_bridge = OBSBridge()
         self.stream_server = StreamServer()
         self.cloud_server = CloudSyncServer()
@@ -301,11 +303,33 @@ class ZeypherMainWindow(QMainWindow):
         self.body_enabled = QCheckBox("Enable Body Tracking")
         self.body_enabled.setChecked(False)
         layout.addWidget(self.body_enabled)
-        self.show_skeleton = QCheckBox("Show Skeleton")
-        self.show_skeleton.setChecked(False)
-        layout.addWidget(self.show_skeleton)
+        row = QHBoxLayout()
+        row.addWidget(QLabel("Overlay:"))
+        self.body_mode = QComboBox()
+        self.body_mode.addItems(["mesh", "glow", "outline", "particles", "skeleton"])
+        row.addWidget(self.body_mode)
+        layout.addLayout(row)
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Opacity:"))
+        self.body_opacity = QSlider(Qt.Horizontal)
+        self.body_opacity.setRange(10, 90)
+        self.body_opacity.setValue(35)
+        self.body_opacity.valueChanged.connect(self._update_body_opacity)
+        row2.addWidget(self.body_opacity)
+        self.opacity_lbl = QLabel("35%")
+        self.opacity_lbl.setFixedWidth(40)
+        self.body_opacity.valueChanged.connect(lambda v: self.opacity_lbl.setText(f"{v}%"))
+        row2.addWidget(self.opacity_lbl)
+        layout.addLayout(row2)
+        self.body_glow = QCheckBox("Glow Effect")
+        self.body_glow.setChecked(True)
+        layout.addWidget(self.body_glow)
         layout.addStretch()
         return w
+
+    def _update_body_opacity(self, value):
+        if self.body_tracker:
+            self.body_tracker._mesh_opacity = value / 100.0
 
     def _build_voice_tab(self):
         w = QWidget()
@@ -380,6 +404,28 @@ class ZeypherMainWindow(QMainWindow):
         self.rvc_status.setStyleSheet("color: #888; font-size: 11px;")
         g2.addWidget(self.rvc_status)
         layout.addWidget(grp2)
+
+        grp3 = QGroupBox("Lip Sync (Audio drives mouth movement)")
+        g3 = QVBoxLayout(grp3)
+        self.lip_sync_enabled = QCheckBox("Enable Lip Sync")
+        self.lip_sync_enabled.stateChanged.connect(self._toggle_lip_sync)
+        g3.addWidget(self.lip_sync_enabled)
+        lip_row = QHBoxLayout()
+        lip_row.addWidget(QLabel("Mic:"))
+        self.lip_sync_input = QComboBox()
+        self.lip_sync_input.setMinimumWidth(200)
+        lip_row.addWidget(self.lip_sync_input, stretch=1)
+        g3.addLayout(lip_row)
+        btn_lip_start = QPushButton("Start Lip Sync")
+        btn_lip_start.setObjectName("startBtn")
+        btn_lip_start.clicked.connect(self._toggle_lip_sync_start)
+        self.btn_lip_start = btn_lip_start
+        g3.addWidget(btn_lip_start)
+        self.lip_sync_status = QLabel("Select mic and start")
+        self.lip_sync_status.setStyleSheet("color: #888; font-size: 11px;")
+        g3.addWidget(self.lip_sync_status)
+        layout.addWidget(grp3)
+
         layout.addStretch()
         return w
 
@@ -523,8 +569,15 @@ class ZeypherMainWindow(QMainWindow):
                     try:
                         result = self.body_tracker.process(display_frame)
                         if result is not None:
-                            if self.show_skeleton.isChecked():
+                            mode = self.body_mode.currentText()
+                            if mode == "skeleton":
                                 display_frame = self.body_tracker.draw_landmarks(display_frame, result)
+                            else:
+                                if self.body_glow.isChecked():
+                                    self.body_tracker._glow_enabled = True
+                                else:
+                                    self.body_tracker._glow_enabled = False
+                                display_frame = self.body_tracker.apply_body_overlay(display_frame, result, mode=mode)
                     except Exception as e:
                         pass
 
@@ -537,6 +590,14 @@ class ZeypherMainWindow(QMainWindow):
                                 display_frame = swapped
                         except Exception as e:
                             pass
+
+                if self.lip_sync.running:
+                    try:
+                        landmarks = self.local_face.get_face_landmarks(display_frame)
+                        if landmarks is not None:
+                            display_frame = self.lip_sync.apply_lip_sync_to_frame(display_frame, landmarks)
+                    except Exception:
+                        pass
 
                 self._display_frame(display_frame, self.preview_camera)
                 self.lbl_cam_fps.setText(f"FPS: {self.camera.fps_actual:.0f}")
@@ -684,6 +745,40 @@ class ZeypherMainWindow(QMainWindow):
                 self.rvc_status.setText("Failed to start — check device")
                 self.rvc_status.setStyleSheet("color: #ff5555; font-size: 11px;")
 
+    def _toggle_lip_sync(self, state):
+        if state == Qt.Checked:
+            devices = self.lip_sync.list_devices()
+            self.lip_sync_input.clear()
+            for d in devices:
+                self.lip_sync_input.addItem(f"{d['name']} ({d['rate']}Hz)", d['id'])
+        else:
+            self.lip_sync_input.clear()
+
+    def _toggle_lip_sync_start(self):
+        if self.lip_sync.running:
+            self.lip_sync.stop()
+            self.btn_lip_start.setText("Start Lip Sync")
+            self.btn_lip_start.setObjectName("startBtn")
+            self.btn_lip_start.style().polish(self.btn_lip_start)
+            self.lip_sync_status.setText("Stopped")
+            self.lip_sync_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+        else:
+            dev_id = self.lip_sync_input.currentData()
+            if dev_id is None:
+                self.lip_sync_status.setText("Select a mic first")
+                self.lip_sync_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+                return
+            self.lip_sync.set_device(dev_id)
+            if self.lip_sync.start():
+                self.btn_lip_start.setText("Stop Lip Sync")
+                self.btn_lip_start.setObjectName("stopBtn")
+                self.btn_lip_start.style().polish(self.btn_lip_start)
+                self.lip_sync_status.setText("Running — mouth tracks your voice")
+                self.lip_sync_status.setStyleSheet("color: #55ff55; font-size: 11px;")
+            else:
+                self.lip_sync_status.setText("Failed to start")
+                self.lip_sync_status.setStyleSheet("color: #ff5555; font-size: 11px;")
+
     def _toggle_lucy(self):
         if not HAS_LUCY:
             QMessageBox.warning(self, "Lucy", "Lucy module not available.")
@@ -796,9 +891,11 @@ class ZeypherMainWindow(QMainWindow):
             self.pipeline.stop()
             self.voice_changer.stop()
             self.realtime_vc.stop()
+            self.lip_sync.stop()
             self.obs_bridge.stop()
             self.stream_server.stop()
             self.cloud_server.stop()
+            self.billing.stop_stream_billing()
             if self.lucy_engine:
                 self.lucy_engine.stop()
             CONFIG.save()

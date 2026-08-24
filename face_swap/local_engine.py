@@ -41,12 +41,33 @@ class LocalFaceSwap:
                 self._method = "mediapipe"
                 print("[LocalSwap] MediaPipe FaceDetector loaded")
                 self._initialized = True
+
+                try:
+                    mesh_model = os.path.join(self._models_dir, "face_landmarker.task")
+                    if not os.path.exists(mesh_model):
+                        mesh_model = os.path.join(os.path.expanduser("~"), "Desktop", "ZeypherLive", "models", "face_landmarker.task")
+                    if os.path.exists(mesh_model):
+                        base_options2 = mp_python.BaseOptions(model_asset_path=mesh_model)
+                        mesh_options = vision.FaceLandmarkerOptions(
+                            base_options=base_options2,
+                            running_mode=vision.RunningMode.VIDEO,
+                            num_faces=1,
+                            min_face_detection_confidence=0.3,
+                            min_tracking_confidence=0.3,
+                        )
+                        self._mp_mesh = vision.FaceLandmarker.create_from_options(mesh_options)
+                        print("[LocalSwap] FaceLandmarker loaded for lip sync")
+                except Exception as e:
+                    print(f"[LocalSwap] FaceLandmarker not available: {e}")
+
                 return True
         except Exception as e:
             print(f"[LocalSwap] MediaPipe init: {e}")
 
         try:
-            cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+            cascade_path = os.path.join(self._models_dir, "haarcascade_frontalface_default.xml")
+            if not os.path.exists(cascade_path):
+                cascade_path = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
             self._haar = cv2.CascadeClassifier(cascade_path)
             if not self._haar.empty():
                 self._method = "haar"
@@ -204,7 +225,22 @@ class LocalFaceSwap:
             "initialized": self._initialized,
             "has_source": self._source_face is not None,
             "method": self._method,
+            "has_mesh": self._mp_mesh is not None,
         }
+
+    def get_face_landmarks(self, frame: np.ndarray):
+        if self._mp_mesh is None:
+            return None
+        try:
+            rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+            ts_ms = int(time.time() * 1000)
+            results = self._mp_mesh.detect_for_video(mp_image, ts_ms)
+            if results.face_landmarks:
+                return results.face_landmarks[0].landmark
+        except Exception:
+            pass
+        return None
 
     def __del__(self):
         if self._mp_detector:
